@@ -37,6 +37,12 @@ import java.util.concurrent.TimeUnit;
 public class MainActivity extends AppCompatActivity {
     Button button;
     Button button2;
+
+
+    PowerManager.WakeLock wakeLock;
+    PowerManager.WakeLock startUpWakeLock;
+    final String wakelockTag="com.example.mqtttestapplication::mqttWakeLockTag";
+    final String startUpWakelockTag="com.example.mqtttestapplication::mqttStartUpWakeLockTag";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -68,15 +74,24 @@ public class MainActivity extends AppCompatActivity {
                 Intent intent = new Intent(getApplicationContext(), MqttService.class);
                // intent.putExtra("test",new String[] {"ssss","fff"});
                 startService(intent);
+             /*   PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                Log.v("mqttLog","powermanager");
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                        wakelockTag);
+                Log.v("mqttLog","wakelock");
+                wakeLock.acquire();
+                Log.v("mqttLog","powermanager");
+                startUpWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                        startUpWakelockTag);
+                Log.v("mqttLog","wakelock");
+                startUpWakeLock.acquire();*/
             }
         });
         button2 = findViewById(R.id.button2);
         button2.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
-                int counter= preferences.getInt("dozeCount",0);
-                long snoozeDate = preferences.getLong("snoozeDate",0);
-                Log.v("mqttLog","dozeCount: "+counter+"  snoozeDate: "+ new Date(snoozeDate));
+               // wakeLock.release();
+               // startUpWakeLock.release();
             }
         });
 

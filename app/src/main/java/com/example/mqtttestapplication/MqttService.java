@@ -14,13 +14,17 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.AsyncTask;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Message;
+import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.util.Log;
+import android.widget.Toast;
 
 
 import androidx.core.app.NotificationCompat;
@@ -43,6 +47,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 
@@ -53,31 +58,106 @@ public class MqttService extends Service {
     //Thread thread;
     Mqtt3AsyncClient client;
     int starts=0;
+    int wakeLockCounter=0;
     String manufacturer = Build.MANUFACTURER;
     String model = Build.MODEL;
     PowerManager.WakeLock wakeLock;
+    PowerManager.WakeLock startUpWakeLock;
     final String wakelockTag="com.example.mqtttestapplication::mqttWakeLockTag";
+    final String startUpWakelockTag="com.example.mqtttestapplication::mqttStartUpWakeLockTag";
+    boolean waiting=false;
+    BroadcastReceiver bc;
+
+
+    Messenger mMessenger;
+    static final int MSG_RECONNECT = 1;
    // MyIdleReceiver br;
     //PowerManager powerManager;
    // Handler handler=new Handler();
 
+
+    @Override
+    public void onCreate() {
+        Log.v("mqttLog","oncreate");
+        if(wakeLock!=null && wakeLock.isHeld()){
+            Log.v("mqttLog","create Released wakelock");
+            wakeLock.release();
+        }
+        super.onCreate();
+    }
+
+    @Override
+    public void onDestroy() {
+        Log.v("mqttLog","onDestroy");
+        if(wakeLock!=null && wakeLock.isHeld()){
+            Log.v("mqttLog","destroy Released wakelock");
+            wakeLock.release();
+        }
+        if(startUpWakeLock!=null && startUpWakeLock.isHeld()){
+            Log.v("mqttLog","destroy Released wakelock");
+            startUpWakeLock.release();
+        }
+        super.onDestroy();
+    }
+
     public int onStartCommand(Intent intent, int flags, int startId) {
-/*
-        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
-                wakelockTag);
-        wakeLock.acquire();
 
+        /*
+        if(startUpWakeLock==null ){
+            Log.v("mqttLog","start");
+            PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+            Log.v("mqttLog","powermanager");
+            startUpWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                    startUpWakelockTag);
+            Log.v("mqttLog","wakelock");
 
+        }
+        if( !startUpWakeLock.isHeld()){
+            startUpWakeLock.acquire();
+            Log.v("mqttLog","acquired");
+        }*/
+
+        if(bc==null){
+            bc= new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    int resultCode = getResultCode();
+                    Log.v("mqttLog","resultcode "+resultCode);
+                    if(wakeLockCounter==1){
+                        wakeLockCounter=wakeLockCounter-1;
+                        wakeLock.release();
+                        Log.v("mqttLog","released");
+                    }else{
+                        wakeLockCounter=wakeLockCounter-1;
+                    }
+                    Log.v("mqttLog","release counter="+wakeLockCounter);
+                    waiting=false;
+
+                }
+            };
+        }
+
+        /*
         Intent intent2 = new Intent(getApplicationContext(), MqttService.class);
         PendingIntent pendingIntent=PendingIntent.getService(getApplicationContext(),243,intent2,0);
         AlarmManager alarm = (AlarmManager)getSystemService(ALARM_SERVICE);
         alarm.cancel(pendingIntent);
-        alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 3*60*1000,pendingIntent);
-  */
+        alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 2*60*1000,pendingIntent);
+*/
 
-        Log.v("mqttLog", "onstartCommand " + starts);
+
         starts++;
+        Log.v("mqttLog", "current onstartCommand " + starts);
+        /*
+        if(client!=null){
+            try {
+                client.disconnect().get();
+            } catch (ExecutionException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }*/
         client=null;
         //powerManager = (PowerManager) getSystemService(POWER_SERVICE);
 
@@ -92,21 +172,23 @@ public class MqttService extends Service {
 
         }*/
         buildClient();
+        subscribe();
         client.connectWith().cleanSession(false)
-                 .keepAlive(120)
-               // .noKeepAlive()
-               // .keepAlive(7200)
+                //  .keepAlive(120)
+                // .noKeepAlive()
+                .keepAlive(3600)
                 .send()
                 .whenComplete((connAck, throwable) -> {
                     if (throwable != null) {
 
-                        Log.v("mqttLog", "connect failure");
+                        Log.v("mqttLog", "connect failure -> release");
+                        //startUpWakeLock.release();
                         Log.v("mqttLog", throwable.getMessage());
                        // wakeLock.release();
                         // handle failure
                     } else {
                         Log.v("mqttLog", "connect");
-                        subscribe();
+
                     }
                 });
 
@@ -130,6 +212,10 @@ public class MqttService extends Service {
                     @Override
                     public void onConnected(MqttClientConnectedContext context) {
                         Log.v("mqttLog", "connectedListener  "+ id);
+                    //    if(startUpWakeLock.isHeld()&&id==starts){
+                    //        startUpWakeLock.release();
+                    //        Log.v("mqttLog", "startUpWakeLock released in connect");
+                   //     }
 
                     }
                 }).addDisconnectedListener(new MqttClientDisconnectedListener() {
@@ -143,6 +229,10 @@ public class MqttService extends Service {
                         Log.v("mqttLog", context.getSource().name());
 
                         if(starts==id){
+                       //     if(startUpWakeLock.isHeld() && context.getReconnector().getAttempts()==2){
+                      //          startUpWakeLock.release();
+                      //          Log.v("mqttLog", "startUpWakeLock released in disconnect");
+                      //      }
                             long delay=5 * context.getReconnector().getAttempts();
                             if(delay>maxDelay)
                                 delay=maxDelay;
@@ -163,22 +253,38 @@ public class MqttService extends Service {
 
 
     public void subscribe(){
-        client.toAsync().subscribeWith()
+
+        client.subscribeWith()
                 .topicFilter("testTopic2")
                 .qos(MqttQos.AT_LEAST_ONCE)
                 .callback(msg -> {
+                   // Log.v("mqttLog","null");
+                    wakeLockCounter++;
+                    if(wakeLockCounter==1 && (wakeLock==null || !wakeLock.isHeld())){
+                        //Log.v("mqttLog","start");
+                        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                       // Log.v("mqttLog","powermanager");
+                        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                                wakelockTag);
+                      //  Log.v("mqttLog","wakelock");
+                        wakeLock.acquire();
+                        Log.v("mqttLog","acquired");
+                    }
+                    Log.v("mqttLog","acquire counter="+wakeLockCounter);
+                    waiting=true;
+
                     //String message= new String(msg.getPayload().get().array());
-                    Log.v("mqttLog", "message");
+                  //  Log.v("mqttLog", "message");
                     String message = "message from phone: " + manufacturer + "  " + model;
                     if (msg.getPayload().isPresent()) {
-                        Log.v("mqttLog", "is present");
+                      //  Log.v("mqttLog", "is present");
                         String s = StandardCharsets.UTF_8.decode(msg.getPayload().get()).toString();
                         message = message + s;
                         Log.v("mqttLog", message);
                         sendBroadcast(Integer.parseInt(s));
 
                     } else {
-                        Log.v("mqttLog", "not present");
+                        Log.v("mqttLog", "Message not present");
                     }
                     //#######
                    /* boolean idle=powerManager.isDeviceIdleMode();
@@ -223,13 +329,7 @@ public class MqttService extends Service {
             //sendBroadcast(intent);
 
 
-            sendOrderedBroadcast(intent, null, new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    int resultCode = getResultCode();
-                    Log.v("mqttLog","resultcode "+resultCode);
-                }
-            },null, MainActivity.RESULT_CANCELED,null,null);
+            sendOrderedBroadcast(intent, null, bc,null, MainActivity.RESULT_CANCELED,null,null);
 
         }
     }
@@ -262,10 +362,33 @@ public class MqttService extends Service {
         intent.putExtra("autoCancel",true);
     }
 
+
+    class IncomingHandler extends Handler {
+        private Context applicationContext;
+
+        IncomingHandler(Context context) {
+            applicationContext = context.getApplicationContext();
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case MSG_RECONNECT:
+                    Log.v("mqttLogIPC","working");
+
+                default:
+                    super.handleMessage(msg);
+            }
+        }
+    }
+
+
+
     @Override
     public IBinder onBind(Intent intent) {
-        // TODO: Return the communication channel to the service.
-        throw new UnsupportedOperationException("Not yet implemented");
+        mMessenger = new Messenger(new IncomingHandler(this));
+        return mMessenger.getBinder();
     }
+
 
 }

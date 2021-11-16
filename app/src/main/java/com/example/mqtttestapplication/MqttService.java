@@ -67,6 +67,7 @@ public class MqttService extends Service {
     final String startUpWakelockTag="com.example.mqtttestapplication::mqttStartUpWakeLockTag";
     boolean waiting=false;
     BroadcastReceiver bc;
+    int receivedPongs=0;
 
 
     Messenger mMessenger;
@@ -102,7 +103,7 @@ public class MqttService extends Service {
 
     public int onStartCommand(Intent intent, int flags, int startId) {
 
-        /*
+
         if(startUpWakeLock==null ){
             Log.v("mqttLog","start");
             PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
@@ -115,7 +116,7 @@ public class MqttService extends Service {
         if( !startUpWakeLock.isHeld()){
             startUpWakeLock.acquire();
             Log.v("mqttLog","acquired");
-        }*/
+        }
 
         if(bc==null){
             bc= new BroadcastReceiver() {
@@ -138,11 +139,7 @@ public class MqttService extends Service {
         }
 
         /*
-        Intent intent2 = new Intent(getApplicationContext(), MqttService.class);
-        PendingIntent pendingIntent=PendingIntent.getService(getApplicationContext(),243,intent2,0);
-        AlarmManager alarm = (AlarmManager)getSystemService(ALARM_SERVICE);
-        alarm.cancel(pendingIntent);
-        alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + 2*60*1000,pendingIntent);
+
 */
 
 
@@ -192,6 +189,8 @@ public class MqttService extends Service {
                     }
                 });
 
+
+       // rescheduleAlarm(10);
       /*  if(br==null){
             Log.v("mqttLog", "starting receiver");
             br=new MyIdleReceiver();
@@ -212,10 +211,11 @@ public class MqttService extends Service {
                     @Override
                     public void onConnected(MqttClientConnectedContext context) {
                         Log.v("mqttLog", "connectedListener  "+ id);
-                    //    if(startUpWakeLock.isHeld()&&id==starts){
-                    //        startUpWakeLock.release();
-                    //        Log.v("mqttLog", "startUpWakeLock released in connect");
-                   //     }
+
+                        if(startUpWakeLock.isHeld()&&id==starts){
+                            startUpWakeLock.release();
+                            Log.v("mqttLog", "startUpWakeLock released in connect");
+                        }
 
                     }
                 }).addDisconnectedListener(new MqttClientDisconnectedListener() {
@@ -229,10 +229,10 @@ public class MqttService extends Service {
                         Log.v("mqttLog", context.getSource().name());
 
                         if(starts==id){
-                       //     if(startUpWakeLock.isHeld() && context.getReconnector().getAttempts()==2){
-                      //          startUpWakeLock.release();
-                      //          Log.v("mqttLog", "startUpWakeLock released in disconnect");
-                      //      }
+                            if(startUpWakeLock.isHeld() && context.getReconnector().getAttempts()==2){
+                                startUpWakeLock.release();
+                                Log.v("mqttLog", "startUpWakeLock released in disconnect");
+                            }
                             long delay=5 * context.getReconnector().getAttempts();
                             if(delay>maxDelay)
                                 delay=maxDelay;
@@ -310,6 +310,15 @@ public class MqttService extends Service {
                 })
                 .send();
 
+    }
+
+    public void rescheduleAlarm(int min){
+        receivedPongs=0;
+        Intent intent2 = new Intent(getApplicationContext(), MqttService.class);
+        PendingIntent pendingIntent=PendingIntent.getService(getApplicationContext(),243,intent2,0);
+        AlarmManager alarm = (AlarmManager)getSystemService(ALARM_SERVICE);
+        alarm.cancel(pendingIntent);
+        alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, SystemClock.elapsedRealtime() + min*60*1000,pendingIntent);
     }
 
 

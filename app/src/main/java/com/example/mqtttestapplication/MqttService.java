@@ -63,7 +63,9 @@ public class MqttService extends Service {
     String model = Build.MODEL;
     PowerManager.WakeLock wakeLock;
     PowerManager.WakeLock startUpWakeLock;
+    PowerManager.WakeLock pongWakeLock;
     final String wakelockTag="com.example.mqtttestapplication::mqttWakeLockTag";
+    final String pongWakelockTag="com.example.mqtttestapplication::mqttPongWakeLockTag";
     final String startUpWakelockTag="com.example.mqtttestapplication::mqttStartUpWakeLockTag";
     boolean waiting=false;
     BroadcastReceiver bc;
@@ -138,13 +140,12 @@ public class MqttService extends Service {
             };
         }
 
-        /*
-
-*/
 
 
         starts++;
         Log.v("mqttLog", "current onstartCommand " + starts);
+
+        //############## added since working
         /*
         if(client!=null){
             try {
@@ -155,25 +156,15 @@ public class MqttService extends Service {
                 e.printStackTrace();
             }
         }*/
+        //################## added since working
         client=null;
-        //powerManager = (PowerManager) getSystemService(POWER_SERVICE);
 
-        /*if(client!=null){
-            try{
-                Log.v("mqttLog","dc ");
-                client.disconnect().get();
-            }catch(Exception e){
-                Log.v("mqttLog","dc failed");
-            }
-        }else{
-
-        }*/
         buildClient();
         subscribe();
         client.connectWith().cleanSession(false)
                 //  .keepAlive(120)
                 // .noKeepAlive()
-                .keepAlive(3600)
+                .keepAlive(600)//10min
                 .send()
                 .whenComplete((connAck, throwable) -> {
                     if (throwable != null) {
@@ -190,7 +181,7 @@ public class MqttService extends Service {
                 });
 
 
-       // rescheduleAlarm(10);
+        rescheduleAlarm(15);
       /*  if(br==null){
             Log.v("mqttLog", "starting receiver");
             br=new MyIdleReceiver();
@@ -251,7 +242,6 @@ public class MqttService extends Service {
 
     }
 
-
     public void subscribe(){
 
         client.subscribeWith()
@@ -302,10 +292,27 @@ public class MqttService extends Service {
                 .qos(MqttQos.AT_MOST_ONCE)
                 .callback(msg -> {
                     //String message= new String(msg.getPayload().get().array());
+                    if(pongWakeLock==null || !pongWakeLock.isHeld()){
+                        //Log.v("mqttLog","start");
+                        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                        // Log.v("mqttLog","powermanager");
+                        pongWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                                pongWakelockTag);
+                        //  Log.v("mqttLog","wakelock");
+                        pongWakeLock.acquire();
+                        Log.v("mqttLog","acquired");
+
+                    }
                     Log.v("mqttLog", "message");
                     String message = "Pong from phone: " + manufacturer + "  " + model;
                     Log.v("mqttLog", "pingRequest");
                     client.toAsync().publishWith().topic("PongResponse").payload(message.getBytes()).send();
+                    receivedPongs++;
+                    //##################################################### changed since working
+                    if(receivedPongs==3)
+                        rescheduleAlarm(15);
+                    pongWakeLock.release();
+                    Log.v("mqttLog","release");
 
                 })
                 .send();
